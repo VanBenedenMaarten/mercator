@@ -1,4 +1,4 @@
-FROM node:lts-alpine@sha256:a136ed7b0df71082cdb171f36d640ea3b392a5c70401c642326acee767b8c540 as build
+FROM node:20-alpine3.20 AS build
 
 #ARG NODE_ENV=production
 #ENV NODE_ENV $NODE_ENV
@@ -16,10 +16,8 @@ ADD public /app/public
 
 RUN NODE_OPTIONS="--openssl-legacy-provider" npm run build --force
 
-#FROM nginx:stable-alpine
-FROM nginx@sha256:26a1b20f194c2adab3be2d9e569ca837ddd31fe105d95dd51344e5bf829f1349
-# CVE-2023-28322
-RUN apk upgrade --no-cache curl libcurl
+# stable-alpine
+FROM nginx@sha256:35e3238f2f0925a505d5d697df9a9148db9a0c78e89fd2e253919047b3cec824
 
 COPY --from=build /app/build/ /usr/share/nginx/html
 

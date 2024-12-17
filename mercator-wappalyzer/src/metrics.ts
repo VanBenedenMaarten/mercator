@@ -1,23 +1,42 @@
 import Prometheus from "prom-client";
-import {config} from './config'
+import { config } from './config'
 import express from "express";
 
-Prometheus.collectDefaultMetrics({prefix: "wappalyzer_"});
+Prometheus.collectDefaultMetrics({ prefix: "wappalyzer_" });
+
+// @ts-ignore noUnusedLocals
+async function getFailureRate(): Promise<number> {
+    // Errors only take into account how many crashes we got. No error if the page doesn't exist.
+    const errors = await getValueOfMetric(getUrlFailed());
+    const successful = await getValueOfMetric(getProcessedUrlCounter());
+    const total = errors + successful;
+
+    const failureRate = total !== 0 ? errors / total : 0.0;
+    return failureRate;
+}
 
 export function initMetricsServer() {
     const app = express();
-    app.get("/health", (_: any, res) => {
-        res.send("OK"); // TODO: A pull request to wappalyzer for monitoring the health of the browser
+    app.get("/health", async (_: express.Request, res: express.Response) => {
+        res.send({ ok: true });
     });
-    app.get("/actuator/prometheus", (_: any, res) => {
+    app.get("/actuator/prometheus", async (_: express.Request, res: express.Response) => {
         res.set("Content-Type", getContentType());
-        res.send(getMetrics());
+        res.send(await getMetrics());
     });
     app.listen(config.server_port);
 }
 
-const getContentType = () => Prometheus.register.contentType;
-const getMetrics = () => Prometheus.register.metrics();
+async function getValueOfMetric(metric: Prometheus.Counter): Promise<number> {
+    return (await metric.get()).values[0].value;
+}
+
+function getContentType() {
+    return Prometheus.register.contentType;
+}
+function getMetrics() {
+    return Prometheus.register.metrics();
+}
 
 // Metrics type
 const urlProcessedCounter = new Prometheus.Counter({
@@ -25,11 +44,26 @@ const urlProcessedCounter = new Prometheus.Counter({
     help: "Number of processed URL"
 });
 
-export const getProcessedUrlCounter = () => urlProcessedCounter;
+function getProcessedUrlCounter() {
+    return urlProcessedCounter;
+}
 
 const processingTimeHist = new Prometheus.Histogram({
     name: "wappalyzer_processing_time",
     help: "Processing time to wappalyze an URL"
 });
 
-export const getProcessingTimeHist = () => processingTimeHist;
+function getProcessingTimeHist() {
+    return processingTimeHist;
+}
+
+const urlFailed = new Prometheus.Counter({
+    name: "wappalyzer_url_failed",
+    help: "Number of URLs that failed processing"
+});
+
+function getUrlFailed() {
+    return urlFailed;
+}
+
+export { getMetrics, getProcessedUrlCounter, getProcessingTimeHist, getUrlFailed };

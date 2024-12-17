@@ -33,13 +33,15 @@ podSecurityContext:
 securityContext:
   runAsUser: 65534
   readOnlyRootFilesystem: true
-  privileged: false
   runAsNonRoot: true
   capabilities:
     drop:
-      - all
+      - ALL
     add:
       - SYS_ADMIN
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
 
 resources:
   requests:
@@ -72,6 +74,8 @@ limits:
   # When to try taking a webp instead of a png
   # 3 mebibyte
   png_threshold: 3145728
+  # Percentage of total request that produced an error before unhealthy
+  failure_threshold: 0.05
 
 extraEnv: {}
 
@@ -84,3 +88,34 @@ global:
       - "127.0.0.1/32"
 
 updateStrategy: Recreate
+
+networkPolicy:
+  enabled: true
+  ingress:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            namespace: monitoring
+        podSelector:
+          matchLabels:
+            app: prometheus
+
+podMonitor:
+  enabled: false
+  port: http
+  scheme: http
+  insecureSkipVerify: true
+  interval: 15s
+  ## [Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#prometheus-operator-1)
+  ## [Kube Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#exporters)
+  # serviceMonitor.selector -- Default to kube-prometheus install (CoreOS recommended), but should be set according to Prometheus install.
+  selector:
+    release: kube-prometheus-stack
+  path: /actuator/prometheus
+  annotations: {}
+  metricRelabelings: {}
+
+prometheusRule:
+  enabled: false
+  max_failures: 0
+  period: 5m

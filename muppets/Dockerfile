@@ -1,4 +1,5 @@
-FROM node:lts-alpine@sha256:09faa7dabeae557cb6baff17be5b216fc4e3c9608aa04fe71695aad3d229a9c7
+#FROM node:20-alpine3.20
+FROM node@sha256:c13b26e7e602ef2f1074aef304ce6e9b7dd284c419b35d89fcf3cc8e44a8def9
 
 RUN apk add -u --update-cache \
     libstdc++ \
@@ -7,8 +8,7 @@ RUN apk add -u --update-cache \
     nss \
     ttf-freefont \
     font-noto-emoji \
-    # CVE-2023-0286
-    && apk upgrade --no-cache libssl1.1 libcrypto1.1 \
+    openssl \
     && rm -rf /var/cache/* \
     && mkdir /var/cache/apk
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \

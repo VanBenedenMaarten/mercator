@@ -1,5 +1,8 @@
-FROM node:lts-alpine@sha256:b375b98d1dcd56f5783efdd80a4d6ff5a0d6f3ce7921ec99c17851db6cba2a93
+FROM golang:1.22.5-alpine AS gobuilder
+RUN apk add git
+RUN git clone https://github.com/DNSBelgium/gowap ./gowap && cd gowap && go build -o /gowap_bin cmd/gowap/main.go
 
+FROM node:20-alpine3.20
 RUN apk add -u --no-cache \
     libstdc++ \
     chromium \
@@ -7,25 +10,8 @@ RUN apk add -u --no-cache \
     nss \
     freetype \
     ttf-freefont \
-    font-noto-emoji
-
-RUN \
-    # CVE-2022-30065 \
-    apk upgrade --no-cache busybox && \
-    # CVE-2022-37434 \
-    apk upgrade --no-cache zlib && \
-    # CVE-2023-24056
-    apk upgrade --no-cache pkgconf && \
-    # CVE-2023-0286
-    apk upgrade --no-cache libssl3 libcrypto3
-
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-    CHROME_BIN=/usr/bin/chromium-browser \
-    CHROME_PATH=/usr/lib/chromium/
-
-#ARG NODE_ENV=production
-#ENV NODE_ENV $NODE_ENV
+    font-noto-emoji \
+    libexpat
 
 WORKDIR /app
 RUN chown node:node ./
@@ -39,7 +25,14 @@ ADD tsconfig.json /app
 ADD src /app/src
 ADD .env /app/.env
 
+COPY --from=gobuilder /gowap_bin /app/gowap
+ENV GOWAP_PATH="/app/gowap"
 # RUN npm run build --omit=dev
 RUN npm run build
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    CHROME_BIN=/usr/bin/chromium-browser \
+    CHROME_PATH=/usr/lib/chromium/
 
 CMD ["node", "/app/dist/index.js"]

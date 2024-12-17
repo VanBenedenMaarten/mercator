@@ -3,10 +3,10 @@ plugins {
   id 'io.spring.dependency-management'
   id 'com.google.cloud.tools.jib'
   id 'java'
-  id 'org.unbroken-dome.helm'
+  id 'com.citi.helm'
 }
 
-version = '0.0.1-' + getCommitHash()
+version = '0.0.1-GIT' + getCommitHash()
 
 repositories {
   mavenCentral()
@@ -28,6 +28,7 @@ dependencies {
 
   // JSON logging
   implementation "net.logstash.logback:logstash-logback-encoder:${logstashLogbackEncoderVersion}"
+  implementation project(':mercator-throttling-appender')
 
   // DB
   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

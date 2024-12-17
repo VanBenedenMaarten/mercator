@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.autoconfigure.metrics.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.net.InetAddress;
@@ -25,7 +24,6 @@ import static org.mockito.Mockito.when;
 
 @SuppressWarnings("SpringBootApplicationProperties")
 @SpringJUnitConfig({Enricher.class, MetricsAutoConfiguration.class, CompositeMeterRegistryAutoConfiguration.class})
-@TestPropertySource(properties = {"crawler.dns.geoIP.enabled=true"})
 class EnricherTest {
 
   @MockBean
@@ -45,8 +43,8 @@ class EnricherTest {
 
   @Test
   public void enrich() {
-    ResponseGeoIp enriched1 = new ResponseGeoIp(Pair.of(20400, "Google ASN"), "BE", 4, "1.2.3.4");
-    ResponseGeoIp enriched2 = new ResponseGeoIp(Pair.of(20500, "Google ASN"), "FR", 4, "10.20.30.40");
+    ResponseGeoIp enriched1 = new ResponseGeoIp(Pair.of(20400L, "Google ASN"), "BE", 4, "1.2.3.4");
+    ResponseGeoIp enriched2 = new ResponseGeoIp(Pair.of(20500L, "Google ASN"), "FR", 4, "10.20.30.40");
     when(geoIpEnricher.enrich(any(InetAddress.class)))
             .thenReturn(enriched1)
             .thenReturn(enriched2);

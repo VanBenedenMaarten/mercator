@@ -16,16 +16,16 @@ import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Configuration for MaxMind DB
- *
+ * <p>
  * MaxMind can be configured by setting these properties
- *
+ * <p>
  *  geo.ip.maxmind.max-file-age=5d
  *  geo.ip.maxmind.license-key=license-key
- *  geo.ip.maxmind.url-asn-db=http://localhost/asn-db
- *  geo.ip.maxmind.url-country-db=http://localhost/country-db
+ *  geo.ip.maxmind.url-asn-db=https://localhost/asn-db
+ *  geo.ip.maxmind.url-country-db=https://localhost/country-db
  *  geo.ip.maxmind.use-paid-version=false
  *  geo.ip.maxmind.file-location=
- *
+ * <p>
  * The only property that has no sensible default value is geo.ip.maxmind.license-key
  */
 @ConfigurationProperties("geo.ip.maxmind")
@@ -65,6 +65,9 @@ public class MaxMindConfig {
     this.usePaidVersion = usePaidVersion;
     this.licenseKey = licenseKey;
     this.fileLocation = Objects.requireNonNullElse(fileLocation, getTempDir());
+    logger.info("urlAsnDb = {}", urlAsnDb);
+    logger.info("urlCountryDb = {}", urlCountryDb);
+    logger.info("usePaidVersion = {}", usePaidVersion);
   }
 
   private String getTempDir() {

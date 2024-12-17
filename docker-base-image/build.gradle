@@ -1,14 +1,18 @@
 plugins {
   id 'base'
-  id 'com.palantir.docker' version '0.32.0'
+  id 'com.palantir.docker' version '0.36.0'
 }
 
 // switch to alpine because of CVE's
-version = 20221102
+version = '0.0.1-GIT' + getCommitHash()
+
+def registry = ""
+if (project.hasProperty("dockerRegistry")) {
+  registry = project.getProperty("dockerRegistry")
+}
 
 docker {
-  name "dnsbelgium/mercator/${project.name}:${project.version}"
-  files 'rds-to-keytool.sh'
+  name "${registry}dnsbelgium/mercator/${project.name}:${version}"
 }
 
 tasks.findByName('dockerPrepare').dependsOn -= tasks.findByName('dockerClean')

@@ -40,11 +40,13 @@ podSecurityContext:
 securityContext:
   runAsUser: 10000
   readOnlyRootFilesystem: true
-  privileged: false
   runAsNonRoot: true
   capabilities:
     drop:
-      - all
+      - ALL
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
 
 resources:
   requests:
@@ -75,3 +77,14 @@ mercator_api:
   host: mercator-mercator-api.default.svc.cluster.local
   port: 80
 extraEnv: {}
+
+networkPolicy:
+  enabled: true
+  ingress:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            namespace: ingress
+        podSelector:
+          matchLabels:
+            app: nginx-ingress

@@ -34,19 +34,21 @@ podSecurityContext:
 securityContext:
   runAsUser: 10000
   readOnlyRootFilesystem: true
-  privileged: false
   runAsNonRoot: true
   capabilities:
     drop:
-      - all
+      - ALL
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
 
 resources:
   requests:
     cpu: 100m
-    memory: 800M
+    memory: 900M
   limits:
     cpu: 500m
-    memory: 800M
+    memory: 1000M
 
 autoscaling:
   enabled: false
@@ -71,6 +73,10 @@ database:
   password: "password"
 geoip:
   key:
+  use_paid_version: false
+  url_asn_db:
+  url_country_db:
+
 
 extraEnv: {}
 
@@ -85,3 +91,34 @@ global:
       - "127.0.0.1/32"
 
 updateStrategy: Recreate
+
+networkPolicy:
+  enabled: true
+  ingress:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            namespace: monitoring
+        podSelector:
+          matchLabels:
+            app: prometheus
+
+podMonitor:
+  enabled: false
+  port: http
+  scheme: https
+  insecureSkipVerify: true
+  interval: 15s
+  ## [Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#prometheus-operator-1)
+  ## [Kube Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#exporters)
+  # serviceMonitor.selector -- Default to kube-prometheus install (CoreOS recommended), but should be set according to Prometheus install.
+  selector:
+    release: kube-prometheus-stack
+  path: /actuator/prometheus
+  annotations: {}
+  metricRelabelings: {}
+
+prometheusRule:
+  enabled: false
+  max_failures: 0
+  period: 5m

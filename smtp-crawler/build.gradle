@@ -1,13 +1,13 @@
 plugins {
-    id 'org.springframework.boot'
+    id "org.springframework.boot"
     id 'io.spring.dependency-management'
     id 'com.google.cloud.tools.jib'
     id 'java'
     id 'info.solidsoft.pitest' version '1.5.1'
-    id 'org.unbroken-dome.helm'
+    id 'com.citi.helm'
 }
 
-version = '0.0.1-' + getCommitHash()
+version = '0.0.1-GIT' + getCommitHash()
 
 repositories {
     mavenCentral()
@@ -27,6 +27,7 @@ dependencies {
 
     // JSON logging
     implementation "net.logstash.logback:logstash-logback-encoder:${logstashLogbackEncoderVersion}"
+    implementation project(':mercator-throttling-appender')
 
     implementation 'org.springframework.integration:spring-integration-core'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -45,7 +46,21 @@ dependencies {
     annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
 
     // https://mvnrepository.com/artifact/com.hubspot/NioSmtpClient
-    implementation 'com.hubspot:NioSmtpClient:1.1.0'
+    implementation 'com.hubspot:NioSmtpClient:1.2.0'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-buffer
+    implementation group: 'io.netty', name: 'netty-buffer', version: '4.1.111.Final'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-transport
+    implementation group: 'io.netty', name: 'netty-transport', version: '4.1.111.Final'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-common
+    implementation group: 'io.netty', name: 'netty-common', version: '4.1.111.Final'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-codec-smtp
+    implementation group: 'io.netty', name: 'netty-codec-smtp', version: '4.1.111.Final'
+
+
     implementation 'dnsjava:dnsjava:3.1.0'
 
     // no idea why we need it, but having it avoids this warning
@@ -56,10 +71,8 @@ dependencies {
     // caching
     implementation 'com.github.ben-manes.caffeine:caffeine:2.8.2'
     
-    implementation 'com.maxmind.geoip2:geoip2:2.12.0'
-
     // https://mvnrepository.com/artifact/org.apache.commons/commons-compress
-    implementation 'org.apache.commons:commons-compress:1.21'
+    implementation 'org.apache.commons:commons-compress:1.26.0'
 
     // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
     implementation 'org.apache.commons:commons-lang3'
@@ -67,7 +80,11 @@ dependencies {
     // https://mvnrepository.com/artifact/com.google.guava/guava
     // NioSmtpClient 1.1.0 depends on constants that were removed in guava 26.0
     // Todo: create pull request for NioSmtpClient
-    implementation 'com.google.guava:guava:25.0-jre'
+    // implementation 'com.google.guava:guava:25.0-jre'
+
+    // https://mvnrepository.com/artifact/com.google.guava/guava
+    implementation group: 'com.google.guava', name: 'guava', version: '33.2.1-jre'
+
 
     // https://mvnrepository.com/artifact/com.github.davidmoten/subethasmtp
     testImplementation group: 'com.github.davidmoten', name: 'subethasmtp', version: '5.2.2'

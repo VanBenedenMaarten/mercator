@@ -1,13 +1,15 @@
 import puppeteer from "puppeteer";
 import * as path from "path";
-import {URL} from "url";
-import {v4 as uuid} from "uuid";
+import { URL } from "url";
+import { v4 as uuid } from "uuid";
 import treekill from "tree-kill";
-import {publicIpv4, publicIpv6} from "public-ip";
+import { publicIpv4, publicIpv6 } from "public-ip";
 
 import * as metrics from "./metrics.js";
 
-import {harFromMessages} from "chrome-har";
+import { harFromMessages } from "chrome-har";
+
+import { debug, error, log, log_failure, log_success, visit_debug, visit_error, visit_info } from "./logging.js";
 
 const DEFAULT_WIDTH = 1600;
 const DEFAULT_HEIGHT = 1200;
@@ -155,32 +157,30 @@ export async function setup() {
 
     new Promise<void>(resolve =>
         browser.on("disconnected", async () => {
-            console.log("Browser closed, reloading it");
+            error("Browser closed, reloading it");
             await browser.close();
             resolve();
         })
     ).then(setup);
 
     browser.process()!.stderr!.on("data", function (logData) {
-        //this does not properly prefix, as logData chunks can have newlines, but maybe good enough for now
-        // (we would be better off to invest in a better logging platform first, anyway)
-        console.log("BROWSER | " + logData.toString());
+        debug(logData.toString().split(/\n/).map(item => "BROWSER | " + item));
     });
 
-    console.log(`Started Puppeteer with pid ${browser.process()!.pid}`);
+    log(`Started Puppeteer with pid ${browser.process()!.pid}`);
 }
 
 (async () => {
     await Promise.all([
         publicIpv4({ onlyHttps: true }).then(result => {
             ipv4 = result;
-            console.log("IPv4: [%s]", ipv4);
-        }).catch(err => console.log("Cannot determine IPv4 : %s", err)),
+            log("IPv4: [%s]", ipv4);
+        }).catch(err => error("Cannot determine IPv4 : %s", err)),
 
         publicIpv6({ onlyHttps: true }).then(result => {
             ipv6 = result;
-            console.log("IPv6: [%s]", ipv6);
-        }).catch(err => console.log("Cannot determine IPv6 : %s", err))
+            log("IPv6: [%s]", ipv6);
+        }).catch(err => error("Cannot determine IPv6 : %s", err))
     ])
 
     await setup();
@@ -193,7 +193,7 @@ function delay(ms: number) {
 export async function shutdown() {
     await delay(5000); // waiting that everything stops
 
-    console.log("Closing Puppeteer");
+    log("Closing Puppeteer");
 
     if (page) {
         page.removeAllListeners("error");
@@ -205,20 +205,20 @@ export async function shutdown() {
     }
 
     await new Promise<void>(resolve => treekill(browser.process()!.pid!, "SIGKILL", () => {
-        console.log("Chrome instances killed");
+        log("Chrome instances killed");
         resolve();
     }));
     return;
 }
 
 function setReferer(page: puppeteer.Page, referer: string) {
-    if (referer) {
-        console.log("Setting the referer to [%s]", referer);
+    if (referer !== "") {
+        visit_debug("Setting the referer to [%s]", referer);
         return page.setExtraHTTPHeaders({
             referer: referer
         });
     } else {
-        console.log("Not setting the referer");
+        visit_debug("Not setting the referer");
     }
 }
 
@@ -226,35 +226,37 @@ function saveHar(params: ScraperParams, events: Event[]) {
     if (params.saveHar) {
         return JSON.stringify(harFromMessages(events));
     } else {
-        console.log("Not saving .har file");
+        log("Not saving .har file");
     }
 }
 
 function takeScreenshot(params: ScraperParams, page: puppeteer.Page): Promise<Buffer> {
-    console.log("screenshotOptions = [%s]", JSON.stringify(params.screenshotOptions));
-    if (params.saveScreenshot && params.screenshotOptions) {
-        params.screenshotOptions.type = params.screenshotOptions.type || "webp";
-        params.screenshotOptions.fullPage = params.screenshotOptions.fullPage || true;
-        params.screenshotOptions.omitBackground = params.screenshotOptions.omitBackground || false;
-        params.screenshotOptions.encoding = params.screenshotOptions.encoding || "binary";
-        params.screenshotOptions.quality = params.screenshotOptions.quality || 100;
-        return page.screenshot(params.screenshotOptions).then(screenshot => {
-            // Because we use encoding binary, this will never be a string
-            return screenshot as Buffer;
-        });
-    } else {
-        return Promise.reject("Not taking a screenshot");
-    }
+    visit_debug("screenshotOptions = [%s]", JSON.stringify(params.screenshotOptions));
+    if (params.saveScreenshot !== true)
+        return Promise.reject("Taking screenshot while it is not asked to do so");
+
+    if (!params.screenshotOptions)
+        return Promise.reject("No screenshot options were provided");
+
+    params.screenshotOptions.type = params.screenshotOptions.type || "webp";
+    params.screenshotOptions.fullPage = params.screenshotOptions.fullPage || true;
+    params.screenshotOptions.omitBackground = params.screenshotOptions.omitBackground || false;
+    params.screenshotOptions.encoding = params.screenshotOptions.encoding || "binary";
+    params.screenshotOptions.quality = params.screenshotOptions.quality || 100;
+    return page.screenshot(params.screenshotOptions).then(screenshot => {
+        // Because we use encoding binary, this will never be a string
+        return screenshot as Buffer;
+    });
 }
 
 async function saveHtml(params: ScraperParams, page: puppeteer.Page): Promise<string> {
-    if (params.saveHtml) {
-        console.log("Saving html");
-        return page.content();
-    } else {
-        console.log("Not saving html");
+    if (!params.saveHtml) {
+        visit_error("Save HTML not requested");
         return Promise.reject();
     }
+
+    visit_debug("Saving html");
+    return page.content();
 }
 
 async function registerHarEventListeners(page: puppeteer.Page, events: any[]) {
@@ -269,7 +271,7 @@ async function registerHarEventListeners(page: puppeteer.Page, events: any[]) {
             });
         });
     } catch (e) {
-        console.error("Failed to register event listeners: " + e);
+        visit_error("Failed to register event listeners: " + e);
         return Promise.reject("Failed to register event listeners");
     }
 }
@@ -291,13 +293,13 @@ async function snap(page: puppeteer.Page, params: ScraperParams): Promise<Scrape
 
     try {
         const url = new URL(params.url);
-        console.log("url = [%s]", url);
+        visit_debug("url = [%s]", url);
 
         // Set up a timeout in which muppets should be able to snap the website. Otherwise, trigger an error.
         new Promise((resolve) => {
             timeoutId = setTimeout(resolve, 60000);
         })
-            .then(() => console.error(`[${url}] timed out!`))
+            .then(() => visit_error(`[${url}] timed out!`))
             .then(() => page.close())
             .then(() => browser.close());
 
@@ -314,7 +316,7 @@ async function snap(page: puppeteer.Page, params: ScraperParams): Promise<Scrape
         }
 
         if (params.retries) {
-            console.log("Easing conditions as this is a retry");
+            visit_debug(`Retrying ${params.url}`);
             await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: GOTO_TIMEOUT });
         } else {
             await page.goto(params.url, { waitUntil: "networkidle2", timeout: GOTO_TIMEOUT });
@@ -322,36 +324,41 @@ async function snap(page: puppeteer.Page, params: ScraperParams): Promise<Scrape
 
         result.url = page.url();
         result.pathname = path.extname(new URL(result.url).pathname).trim().match(/\/?/) ? "index.html" : url.pathname;
-        console.log("page.url = [%s]", result.url);
+        visit_debug("page.url = [%s]", result.url);
 
         result.harData = saveHar(params, events);
 
         // Get all data
-        await Promise.all([
+        const promises = [
             page.metrics().then(output => { result.metrics = output; }),
             page.title().then(output => { result.pageTitle = output; }),
             page.browser().version().then(output => { result.browserVersion = output; }),
-            saveHtml(params, page).then(output => { result.htmlData = output; result.htmlLength = result.htmlData ? result.htmlData.length : 0 }),
-            takeScreenshot(params, page).then(output => { result.screenshotData = output })
-        ]);
+        ];
 
-        console.log(result);
+        if (params.saveHtml)
+            promises.push(saveHtml(params, page).then(output => { result.htmlData = output; result.htmlLength = result.htmlData ? result.htmlData.length : 0 }));
+        if (params.saveScreenshot)
+            promises.push(takeScreenshot(params, page).then(output => { result.screenshotData = output }));
+
+        await Promise.all(promises);
+
+        visit_debug(result);
         result.screenshotType = params.screenshotOptions.type ?? "webp";
         await page.close();
-
-        console.log("Snap finished");
+        log_success(params.url);
 
         return { ...result };
 
     } catch (e) {
         if (e instanceof Error) {
-            console.error("Error caught [%s]", e.message);
+            visit_error("Error caught [%s]", e.message);
             if (e.message === `Navigation timeout of ${GOTO_TIMEOUT} ms exceeded`) {
                 metrics.getDomainTimeOuts().inc();
+                log_failure(params.url, "timeout")
             }
             result.errors.push(e.message);
         } else {
-            console.error("Something happened [%s]", e);
+            log_failure(params.url, e);
         }
         return result;
     } finally {
@@ -363,10 +370,10 @@ async function snap(page: puppeteer.Page, params: ScraperParams): Promise<Scrape
 export async function websnap(params: ScraperParams): Promise<ScraperResult> {
     try {
         while (!browser || !browser.isConnected()) {
-            console.log("browser is not ready");
+            visit_info("Waiting for browser");
             await delay(500);
         }
-        console.log("websnap called with params [%s]", JSON.stringify(params));
+        visit_debug("websnap called with params [%s]", JSON.stringify(params));
 
         const endProcessingTimeHist = metrics.getProcessingTimeHist().startTimer();
 
@@ -376,11 +383,11 @@ export async function websnap(params: ScraperParams): Promise<ScraperResult> {
         // Error handling
         page.once("error", err => {
             if (err instanceof Error) {
-                console.error("Page error caught [%s]", err.message);
+                visit_error("Page error caught [%s]", err.message);
             } else {
-                console.error("Page error caught [%s]", err);
+                visit_error("Page error caught [%s]", err);
             }
-            page.close().then(() => browser.close()).catch(err => console.error("Failed to handle error: " + err.message));
+            page.close().then(() => browser.close()).catch(err => visit_error("Failed to handle error: " + err.message));
         });
         const scraperResult = await snap(page, params);
         endProcessingTimeHist();

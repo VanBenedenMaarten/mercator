@@ -1,132 +1,120 @@
 #!/usr/bin/env groovy
+def buildableDockerImages = ['dispatcher', 'dns-crawler', 'smtp-crawler', 'tls-crawler', 'vat-crawler', 'feature-extraction', 'content-crawler', 'ground-truth', 'mercator-api', 'muppets', 'mercator-ui', 'mercator-wappalyzer']
+@Library('dnsbelgium-jenkins-pipeline-steps') _
 
 pipeline {
   agent {
-    label "master"
+    label 'master'
   }
   tools {
-    jdk "OpenJDK 17"
+    jdk 'OpenJDK 17'
   }
   options {
-    buildDiscarder(logRotator(numToKeepStr: "10"))
-    ansiColor("xterm")
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    ansiColor('xterm')
     disableConcurrentBuilds()
   }
   parameters {
-    string(name: "aws_region", defaultValue: "eu-west-1", description: "region to deploy to")
+    string(name: 'aws_region', defaultValue: 'eu-west-1', description: 'region to deploy to')
   }
   stages {
-
-    stage("Setting up env variables") {
+    stage('Setting up env variables') {
       steps {
         script {
-          withCredentials(bindings: [[$class: "AmazonWebServicesCredentialsBinding", credentialsId: "aws-role-ecr-Prod"]]) {
-            env.AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity | jq -r ".Account"', returnStdout: true).trim()
+          env.GIT_COMMIT_HASH = sh(script: 'git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD', returnStdout: true, returnStatus: false).trim()
+          env.AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity | jq -r ".Account"', returnStdout: true).trim()
+          withCredentials([usernamePassword(credentialsId: 'maxmind_test_license', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+            env.MAXMIND_LICENSE_KEY = "${PASSWORD}"
+          }
+          withCredentials([usernamePassword(credentialsId: 'NVD_API_KEY', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+            env.NVD_API_KEY = "${PASSWORD}"
           }
         }
       }
     }
 
-    stage("Build + test") {
+    stage('Build + test') {
       steps {
-        sh "./gradlew clean build"
+        sh './gradlew clean build'
       }
       post {
         always {
-          junit allowEmptyResults: true, testResults: "**/build/test-results/test/*.xml"
+          junit allowEmptyResults: true, testResults: '**/build/test-results/test/*.xml'
         }
       }
     }
 
-    stage("Helm conftest") {
+// Disabling for now ...
+//     stage("Helm conftest") {
+//       steps {
+//         sh "/usr/local/bin/helm-conftest-wrapper.sh"
+//       }
+//       post {
+//         always {
+//           archiveArtifacts allowEmptyArchive: true, artifacts: "helm-conftest-results.txt"
+//         }
+//       }
+//     }
+
+    // this takes 50 minutes without an API key.
+    stage('OWASP dependency check') {
       steps {
-        sh "/usr/local/bin/helm-conftest-wrapper.sh"
-      }
-      post {
-        always {
-          archiveArtifacts allowEmptyArchive: true, artifacts: "helm-conftest-results.txt"
-        }
+        sh './gradlew dependencyCheckAggregate'
+        dependencyCheckPublisher pattern: 'build/reports/dependency-check-report.xml'
+        archiveArtifacts artifacts: 'build/reports/dependency-check-report.html'
       }
     }
 
-    stage("OWASP dependency check") {
+    stage('Docker and Helm login') {
       steps {
-        sh "./gradlew dependencyCheckAggregate"
-        dependencyCheckPublisher pattern: "build/reports/dependency-check-report.xml"
-        archiveArtifacts artifacts: "build/reports/dependency-check-report.html"
+        sh """
+          aws ecr get-login-password --region \${aws_region} | docker login --username AWS --password-stdin ${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com
+          export HELM_EXPERIMENTAL_OCI=1
+          aws ecr get-login-password --region \${aws_region} | helm registry login --username AWS --password-stdin ${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com
+        """
       }
     }
 
-    stage("Docker and Helm login") {
+    stage('Build and push docker base image') {
       steps {
-        withCredentials(bindings: [[$class: "AmazonWebServicesCredentialsBinding", credentialsId: "aws-role-ecr-Prod"]]) {
-          sh """
-            \$(aws ecr get-login --no-include-email --region \${aws_region})
-            export HELM_EXPERIMENTAL_OCI=1
-            helm registry login --username AWS --password \$(aws ecr get-login --no-include-email --region \${aws_region} | cut -d' ' -f6) ${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com
-          """
-        }
+        sh """
+           ./gradlew --no-daemon docker-base-image:docker -PdockerRegistry=${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/
+           ./gradlew --no-daemon docker-base-image:dockerPush -PdockerRegistry=${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/
+        """
       }
     }
 
-    stage("Build and push docker images") {
+    stage('Build and push docker images') {
       steps {
         script {
           def docker = [:]
-          ["dispatcher", "dns-crawler", "smtp-crawler", "tls-crawler", "vat-crawler", "feature-extraction", "content-crawler", "ground-truth", "mercator-api", "muppets", "mercator-ui", "mercator-wappalyzer"].each { app ->
-//             docker[app] = {
+          buildableDockerImages.each { app ->
+            docker[app] = {
               stage("Create docker image for ${app}") {
-                withCredentials(bindings: [[$class: "AmazonWebServicesCredentialsBinding", credentialsId: "aws-role-ecr-Prod"]]) {
-                  sh """
-                    if aws ecr list-images --region \${aws_region} --repository dnsbelgium/mercator/${app} --output text | grep -q -F \${GIT_COMMIT:0:7} ; then
-                      echo "image already exists"
-                    else
-                      ./gradlew --no-daemon ${app}:dockerBuildAndPush -PdockerRegistry=${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/
-                    fi
-                  """
-                }
-              }
-//             }
-          }
-//           parallel docker
-        }
-      }
-    }
-
-    stage("Scan docker images") {
-      steps {
-        script {
-          def docker = [:]
-          ["dispatcher", "dns-crawler", "smtp-crawler", "tls-crawler", "vat-crawler", "feature-extraction", "content-crawler", "ground-truth", "mercator-api", "muppets", "mercator-ui", "mercator-wappalyzer"].each { app ->
-            stage("Scan docker image for ${app}") {
-              dir("${app}") {
-                withCredentials(bindings: [[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-role-ecr-Prod']]) {
-                  library 'dnsbelgium-jenkins-pipeline-steps'
-                  scanContainer(image: "${env.AWS_ACCOUNT_ID}.dkr.ecr.${aws_region}.amazonaws.com/dnsbelgium/mercator/${app}:${GIT_COMMIT.take(7)}", ignoredCVEs: readFile(file: '.trivyignore'), offlineScan: true)
-                }
+                sh """
+                  if aws ecr list-images --region \${aws_region} --repository dnsbelgium/mercator/${app} --output text | grep -q -F "${env.GIT_COMMIT_HASH}" ; then
+                    echo "image already exists"
+                  else
+                    ./gradlew --no-daemon ${app}:dockerBuildAndPush -PdockerRegistry=${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/
+                  fi
+                """
               }
             }
           }
+          parallel docker
         }
       }
     }
 
-    stage("Build and push helm charts") {
+    stage('Scan docker images') {
       steps {
         script {
-          def docker = [:]
-          ["dispatcher", "dns-crawler", "smtp-crawler", "tls-crawler", "vat-crawler", "feature-extraction", "content-crawler", "ground-truth", "mercator-api", "muppets", "mercator-ui", "mercator-wappalyzer"].each { app ->
+          docker = [:]
+          buildableDockerImages.each { app ->
             docker[app] = {
-              stage("Build and push helm chart for ${app}") {
-                withCredentials(bindings: [[$class: "AmazonWebServicesCredentialsBinding", credentialsId: "aws-role-ecr-Prod"]]) {
-                  sh """
-                    export HELM_EXPERIMENTAL_OCI=1
-                    if aws ecr list-images --region \${aws_region} --repository dnsbelgium/mercator/helm/${app} --output text | grep -q -F \${GIT_COMMIT:0:7} ; then
-                      echo "image already exists"
-                    else
-                      ./gradlew --no-daemon ${app}:helmPackage ${app}:helmPublish -PhelmRegistry=oci://${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/dnsbelgium/mercator/helm
-                    fi
-                  """
+              stage("Scan docker image for ${app}") {
+                dir("${app}") {
+                  scanContainer(image: "${env.AWS_ACCOUNT_ID}.dkr.ecr.${aws_region}.amazonaws.com/dnsbelgium/mercator/${app}:GIT${env.GIT_COMMIT_HASH}", ignoredCVEs: readFile(file: '.trivyignore'), offlineScan: true)
                 }
               }
             }
@@ -136,9 +124,32 @@ pipeline {
       }
     }
 
-    stage("Deploy to dev") {
+    stage('Build and push helm charts') {
       steps {
-        build job: 'mercator-cd', parameters: [string(name: 'ENV', value: "dev"), string(name: 'VERSION', value: GIT_COMMIT.take(7)),]
+        script {
+          def docker = [:]
+          buildableDockerImages.each { app ->
+            docker[app] = {
+              stage("Build and push helm chart for ${app}") {
+                sh """
+                  export HELM_EXPERIMENTAL_OCI=1
+                  if aws ecr list-images --region \${aws_region} --repository dnsbelgium/mercator/helm/${app} --output text | grep -q -F "${env.GIT_COMMIT_HASH}" ; then
+                    echo "image already exists"
+                  else
+                    ./gradlew --no-daemon ${app}:helmPackage ${app}:helmPublish -PhelmRegistry=oci://${env.AWS_ACCOUNT_ID}.dkr.ecr.\${aws_region}.amazonaws.com/dnsbelgium/mercator/helm
+                  fi
+                """
+              }
+            }
+          }
+          parallel docker
+        }
+      }
+    }
+
+    stage('Deploy to dev') {
+      steps {
+        build job: 'mercator-cd', parameters: [string(name: 'ENV', value: 'dev'), string(name: 'VERSION', value: "GIT${env.GIT_COMMIT_HASH}"),]
       }
     }
   }
@@ -146,7 +157,7 @@ pipeline {
   post {
     always {
       sh """
-        CURRENT_COMMIT=\${GIT_COMMIT:0:7}
+        CURRENT_COMMIT=${env.GIT_COMMIT_HASH}
         PROJECT="mercator"
 
         LAYER_TO_KEEP=`docker images -a | grep \${PROJECT} | grep \${CURRENT_COMMIT} | awk '{ print \$3}'`
