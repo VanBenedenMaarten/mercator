@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/layout}">
+
+<head>
+    <title>Mercator | Submit </title>
+</head>
+
+<body >
+
+<div class="xgrid">
+
+    <main class="container">
+
+        <div layout:fragment="content">
+
+            <h1>Submit a crawl</h1>
+            <p>
+                Use the form below to submit a visit request to the work queue.
+            </p>
+            <p>
+                You can also use the ingestion folder to submit a larger set of visit requests.
+                See the <a href="https://github.com/DNSBelgium/mercator/blob/main/README.MD">README.MD</a> for more details.
+
+            </p>
+
+            <form action="/submit_crawl" method="POST">
+                <fieldset role="group">
+                    <input name="domainName" placeholder="Enter a domain name to crawl">
+                    <input type="submit" value="Submit"/>
+                </fieldset>
+            </form>
+
+            <div th:if="${visitRequest} != null">
+
+                <p>
+                    A visit for domain name
+                    <strong th:text="${visitRequest.getDomainName()}"/>
+                    was submitted to the work queue.
+
+                </p>
+
+                <small>Visit id:
+                    <span th:text="${visitRequest.getVisitId()}"/>
+                </small>
+
+            </div>
+
+        </div>
+
+    </main>
+
+</div>
+
+
+<th:block layout:fragment="script-content">
+    <!-- Add additional scripts there that are only needed for this page (Application wide scripts should be added in layout/main.html) -->
+</th:block>
+
+</body>
+</html>
